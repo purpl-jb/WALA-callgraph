@@ -1,12 +1,19 @@
-WALA Starter Kit
+WALA Callgraph Builder
 =======
 
 ### Introduction
+This is a simple utility that uses [WALA](https://github.com/wala/WALA) to generate
+and serialize callgraphs for Java programs.  It is based on the [WALA-start](https://github.com/wala/WALA-start)
+example project, and as such shares the requirements, installation instructions, and license listed below.
 
-This is a small example project to help in getting started with the
-[WALA](https://github.com/wala/WALA) program analysis framework.  You
-can clone and build this project to get WALA installed, and then
-modify it to suit your own needs.
+In order to generate an _application-only_ callgraph, install and then run
+
+    ./run.py Lcom/example/MainClass <jar> <output>
+	
+This will analyze the java program `<jar>` from the entrypoint in `com.example.MainClass`, build a callgraph,
+and write to `<output>` a text file containing those callgraph edges originating in application code.
+
+This serialized callgraph can then be used by other analysis tools as needed.
 
 ### Requirements
 
@@ -23,13 +30,6 @@ Clone the repository, and then run:
     ./gradlew compileJava
     
 This will pull in the WALA jars and build the sample code.
-
-### Example analyses
-
-  * [Variants of a simple dataflow analysis](https://github.com/msridhar/WALA-start/tree/master/src/main/java/com/ibm/wala/examples/analysis/dataflow), including an [example driver](https://github.com/msridhar/WALA-start/blob/master/src/main/java/com/ibm/wala/examples/drivers/CSReachingDefsDriver.java)
-  * [Simple driver](https://github.com/msridhar/WALA-start/blob/master/src/main/java/com/ibm/wala/examples/drivers/ScopeFileCallGraph.java) for building a [call graph](http://wala.sourceforge.net/wiki/index.php/UserGuide:CallGraph) from a [scope file](http://wala.sourceforge.net/wiki/index.php/UserGuide:AnalysisScope)
-  
-We plan to add more examples soon, like examples of doing Android or JavaScript analysis.
 
 License
 -------
