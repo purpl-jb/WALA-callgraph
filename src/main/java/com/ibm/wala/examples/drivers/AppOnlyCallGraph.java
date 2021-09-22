@@ -141,7 +141,9 @@ public class AppOnlyCallGraph {
        Produces output in the following grammar, i.e. something like "com.example.ClassName#methodName(fully.qualified.Arg1Type, fully.qualified.Arg2Type, ...)"
 :
 
-       output ::= <package>.<class_name>#<method_name>(<arg_types>)
+       output ::= <static_opt> <package>.<class_name>#<method_name>(<arg_types>)
+
+       static_opt ::= static | ε
 
        package ::= lowercase_ident | <package>.lowercase_ident
 
@@ -159,7 +161,9 @@ public class AppOnlyCallGraph {
     private static void serializeCGNode(CGNode n, FileOutputStream out) throws IOException {
 	StringBuilder builder = new StringBuilder(128); // Initial buffer size of 128 characters
 	
-	// First, append the declaring class' TypeName followed by a "#" separator
+	// First append "static " if needed, then the declaring class' TypeName followed by a "#" separator
+	if (n.getMethod().isStatic())
+	    builder.append("static ");
 	IClass klass = n.getMethod().getDeclaringClass();
 	builder.append(StringStuff.jvmToReadableType(klass.getName().toString()));
 	builder.append("#");
