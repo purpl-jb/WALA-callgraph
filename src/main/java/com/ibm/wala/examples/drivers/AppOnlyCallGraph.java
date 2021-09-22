@@ -11,6 +11,8 @@
 package com.ibm.wala.examples.drivers;
 
 import java.io.IOException;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Properties;
@@ -26,6 +28,7 @@ import com.ibm.wala.ipa.callgraph.CallGraph;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilder;
 import com.ibm.wala.ipa.callgraph.CallGraphBuilderCancelException;
 import com.ibm.wala.ipa.callgraph.CallGraphStats;
+import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.Entrypoint;
 import com.ibm.wala.ipa.callgraph.impl.DefaultEntrypoint;
 import com.ibm.wala.ipa.callgraph.impl.Util;
@@ -33,6 +36,7 @@ import com.ibm.wala.ipa.cha.ClassHierarchyException;
 import com.ibm.wala.ipa.cha.ClassHierarchyFactory;
 import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.types.ClassLoaderReference;
+import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
 import com.ibm.wala.util.config.AnalysisScopeReader;
 import com.ibm.wala.util.io.CommandLine;
@@ -43,11 +47,11 @@ import com.ibm.wala.util.warnings.Warnings;
  * Driver that constructs a call graph for an application specified via a scope file.  
  * Useful for getting some code to copy-paste.    
  */
-public class ScopeFileCallGraph {
+public class AppOnlyCallGraph {
 
   /**
-   * Usage: ScopeFileCallGraph -scopeFile file_path [-entryClass class_name |
-   * -mainClass class_name]
+   * Usage: AppOnlyCallGraph -scopeFile file_path [-entryClass class_name |
+   * -mainClass class_name] -out output_file
    * 
    * If given -mainClass, uses main() method of class_name as entrypoint. If
    * given -entryClass, uses all public methods of class_name.
@@ -60,6 +64,8 @@ public class ScopeFileCallGraph {
   public static void main(String[] args) throws IOException, ClassHierarchyException, IllegalArgumentException,
       CallGraphBuilderCancelException {
     long start = System.currentTimeMillis();
+    for(int i = 0; i < args.length; i++)
+	System.out.println("ARG " + i + ": \"" + args[i] + "\"");
     Properties p = CommandLine.parse(args);
     String scopeFile = p.getProperty("scopeFile");
     String entryClass = p.getProperty("entryClass");
@@ -67,6 +73,18 @@ public class ScopeFileCallGraph {
     if (mainClass != null && entryClass != null) {
       throw new IllegalArgumentException("only specify one of mainClass or entryClass");
     }
+    
+    String outputPath = p.getProperty("out");
+    System.out.println("outputPath: " + outputPath);
+    FileOutputStream out;
+    try {
+	File outFile = new File(outputPath);
+	if(!outFile.exists()) outFile.createNewFile();
+	out = new FileOutputStream(outFile);
+    } catch (Exception e) {
+	throw new IllegalArgumentException("must specify valid output file as \"-out /path/to/output/file\"");
+    }
+    
     AnalysisScope scope = AnalysisScopeReader.readJavaScope(scopeFile, null, ScopeFileCallGraph.class.getClassLoader());
     // set exclusions.  we use these exclusions as standard for handling JDK 8
     ExampleUtil.addDefaultExclusions(scope);
@@ -86,6 +104,20 @@ public class ScopeFileCallGraph {
 //    CallGraphBuilder builder = Util.makeVanillaNCFABuilder(2, options, cache, cha, scope);
     System.out.println("building call graph...");
     CallGraph cg = builder.makeCallGraph(options, null);
+    for (CGNode n : cg) {
+	if(n.getMethod().getDeclaringClass().getClassLoader().getReference().equals(ClassLoaderReference.Application)) {
+	    out.write("CALLER: ".getBytes());
+	    serializeCGNode(n, out);
+	    java.util.Iterator<CGNode> callees = cg.getSuccNodes(n);
+	    while(callees.hasNext()) {
+		CGNode callee = callees.next();
+		out.write("\tCALLEE: ".getBytes());
+		serializeCGNode(callee, out);
+	    }
+	    out.flush();
+	}
+    }
+    out.close();
     long end = System.currentTimeMillis();
     System.out.println("done");
     System.out.println("took " + (end-start) + "ms");
@@ -96,6 +128,7 @@ public class ScopeFileCallGraph {
     Collection<Entrypoint> result = new ArrayList<Entrypoint>();
     IClass klass = cha.lookupClass(TypeReference.findOrCreate(ClassLoaderReference.Application,
         StringStuff.deployment2CanonicalTypeString(entryClass)));
+    System.err.println("got klass for entrypoints: " + klass);
     for (IMethod m : klass.getDeclaredMethods()) {
       if (m.isPublic()) {
         result.add(new DefaultEntrypoint(m, cha));
@@ -103,4 +136,50 @@ public class ScopeFileCallGraph {
     }
     return result;
   }
+    
+    /* Convert a WALA CGNode into a string containing only that info needed to recover the corresponding DAI Method_id.t
+       Produces output in the following grammar, i.e. something like "com.example.ClassName#methodName(fully.qualified.Arg1Type, fully.qualified.Arg2Type, ...)"
+:
+
+       output ::= <package>.<class_name>#<method_name>(<arg_types>)
+
+       package ::= lowercase_ident | <package>.lowercase_ident
+
+       class_name ::= uppercase_ident
+
+       method_name ::= lowercase_ident
+
+       arg_types ::= <type> | <arg_types>, <type>
+
+       type ::= <type>[] | <package>.uppercase_ident | primitive_type
+
+       (where `primitive_type` and `(upper|lower)case_ident` are as in Java source-language syntax)
+
+     */
+    private static void serializeCGNode(CGNode n, FileOutputStream out) throws IOException {
+	StringBuilder builder = new StringBuilder(128); // Initial buffer size of 128 characters
+	
+	// First, append the declaring class' TypeName followed by a "#" separator
+	IClass klass = n.getMethod().getDeclaringClass();
+	builder.append(StringStuff.jvmToReadableType(klass.getName().toString()));
+	builder.append("#");
+
+	// Next, add the method name followed by an open-parenthesis
+	MethodReference meth = n.getMethod().getReference();
+	builder.append(meth.getName());
+	builder.append("(");
+
+	//Then (comma-separated) argument types, followed by a close-parenthesis and newline
+	int numParams = meth.getNumberOfParameters();
+	for(int i = 0; i < numParams; i++) {
+	    TypeReference paramType = meth.getParameterType(i);
+	    builder.append(StringStuff.jvmToReadableType(paramType.getName().toString()));
+	    if( i + 1 < numParams ) builder.append(", ");
+	    }
+	builder.append(")\n");
+
+	//Write the full serialized CGNode to the output stream
+	byte[] serialized =  builder.toString().getBytes();
+	out.write(serialized);
+    }
 }
