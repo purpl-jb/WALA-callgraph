@@ -178,7 +178,7 @@ public class AppOnlyCallGraph {
 	for(int i = 0; i < numParams; i++) {
 	    TypeReference paramType = meth.getParameterType(i);
 	    builder.append(StringStuff.jvmToReadableType(paramType.getName().toString()));
-	    if( i + 1 < numParams ) builder.append(", ");
+	    if( i + 1 < numParams ) builder.append(",");
 	    }
 	builder.append(")\n");
 
