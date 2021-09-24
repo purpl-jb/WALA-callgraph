@@ -99,6 +99,7 @@ public class AppOnlyCallGraph {
 //    options.setReflectionOptions(ReflectionOptions.NONE);
     AnalysisCache cache = new AnalysisCacheImpl();
     // other builders can be constructed with different Util methods
+    // TODO(benno): Manu says to use CHACallGraph if we run into scaling issues with 0-1-container-CFA? doesn't need entrypoints and scales much better
     CallGraphBuilder builder = Util.makeZeroOneContainerCFABuilder(options, cache, cha, scope);
 //    CallGraphBuilder builder = Util.makeNCFABuilder(2, options, cache, cha, scope);
 //    CallGraphBuilder builder = Util.makeVanillaNCFABuilder(2, options, cache, cha, scope);
@@ -111,8 +112,10 @@ public class AppOnlyCallGraph {
 	    java.util.Iterator<CGNode> callees = cg.getSuccNodes(n);
 	    while(callees.hasNext()) {
 		CGNode callee = callees.next();
-		out.write("\tCALLEE: ".getBytes());
-		serializeCGNode(callee, out);
+		if(callee.getMethod().getDeclaringClass().getClassLoader().getReference().equals(ClassLoaderReference.Application)) {
+		    out.write("\tCALLEE: ".getBytes());
+		    serializeCGNode(callee, out);
+		}
 	    }
 	    out.flush();
 	}
