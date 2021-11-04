@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.Properties;
 
 import com.ibm.wala.classLoader.IClass;
+import com.ibm.wala.classLoader.IClassLoader;
 import com.ibm.wala.classLoader.IMethod;
 import com.ibm.wala.examples.util.ExampleUtil;
 import com.ibm.wala.ipa.callgraph.AnalysisCache;
@@ -30,6 +31,7 @@ import com.ibm.wala.ipa.callgraph.CallGraphBuilderCancelException;
 import com.ibm.wala.ipa.callgraph.CallGraphStats;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.Entrypoint;
+import com.ibm.wala.ipa.callgraph.cha.CHACallGraph;
 import com.ibm.wala.ipa.callgraph.impl.DefaultEntrypoint;
 import com.ibm.wala.ipa.callgraph.impl.Util;
 import com.ibm.wala.ipa.cha.ClassHierarchyException;
@@ -38,10 +40,11 @@ import com.ibm.wala.ipa.cha.IClassHierarchy;
 import com.ibm.wala.types.ClassLoaderReference;
 import com.ibm.wala.types.MethodReference;
 import com.ibm.wala.types.TypeReference;
-import com.ibm.wala.util.config.AnalysisScopeReader;
+import com.ibm.wala.core.util.config.AnalysisScopeReader;
 import com.ibm.wala.util.io.CommandLine;
-import com.ibm.wala.util.strings.StringStuff;
-import com.ibm.wala.util.warnings.Warnings;
+import com.ibm.wala.util.CancelException;
+import com.ibm.wala.core.util.strings.StringStuff;
+import com.ibm.wala.core.util.warnings.Warnings;
 
 /**
  * Driver that constructs a call graph for an application specified via a scope file.  
@@ -62,7 +65,7 @@ public class AppOnlyCallGraph {
    * @throws IllegalArgumentException
    */
   public static void main(String[] args) throws IOException, ClassHierarchyException, IllegalArgumentException,
-      CallGraphBuilderCancelException {
+      CancelException {
     long start = System.currentTimeMillis();
     for(int i = 0; i < args.length; i++)
 	System.out.println("ARG " + i + ": \"" + args[i] + "\"");
@@ -85,7 +88,7 @@ public class AppOnlyCallGraph {
 	throw new IllegalArgumentException("must specify valid output file as \"-out /path/to/output/file\"");
     }
     
-    AnalysisScope scope = AnalysisScopeReader.readJavaScope(scopeFile, null, ScopeFileCallGraph.class.getClassLoader());
+    AnalysisScope scope = AnalysisScopeReader.instance.readJavaScope(scopeFile, null, ScopeFileCallGraph.class.getClassLoader());
     // set exclusions.  we use these exclusions as standard for handling JDK 8
     ExampleUtil.addDefaultExclusions(scope);
     IClassHierarchy cha = ClassHierarchyFactory.make(scope);
@@ -93,25 +96,37 @@ public class AppOnlyCallGraph {
     System.out.println(Warnings.asString());
     Warnings.clear();
     AnalysisOptions options = new AnalysisOptions();
-    Iterable<Entrypoint> entrypoints = entryClass != null ? makePublicEntrypoints(scope, cha, entryClass) : Util.makeMainEntrypoints(scope, cha, mainClass);
+    String classString = StringStuff.deployment2CanonicalTypeString(entryClass != null ? entryClass : mainClass);
+    Iterable<Entrypoint> entrypoints =
+	entryClass != null
+	? makePublicEntrypoints(scope, cha, classString)
+	: Util.makeMainEntrypoints(scope, cha, classString);
     options.setEntrypoints(entrypoints);
     // you can dial down reflection handling if you like
-//    options.setReflectionOptions(ReflectionOptions.NONE);
+    options.setReflectionOptions(AnalysisOptions.ReflectionOptions.NONE);
     AnalysisCache cache = new AnalysisCacheImpl();
     // other builders can be constructed with different Util methods
     // TODO(benno): Manu says to use CHACallGraph if we run into scaling issues with 0-1-container-CFA? doesn't need entrypoints and scales much better
-    CallGraphBuilder builder = Util.makeZeroOneContainerCFABuilder(options, cache, cha, scope);
-//    CallGraphBuilder builder = Util.makeNCFABuilder(2, options, cache, cha, scope);
-//    CallGraphBuilder builder = Util.makeVanillaNCFABuilder(2, options, cache, cha, scope);
+    CallGraphBuilder builder = Util.makeNCFABuilder(0, options, cache, cha, scope);
+    //    CallGraphBuilder builder = Util.makeVanillaNCFABuilder(2, options, cache, cha, scope);
+    //    CallGraphBuilder builder = Util.makeZeroOneContainerCFABuilder(options, cache, cha, scope);
     System.out.println("building call graph...");
-    CallGraph cg = builder.makeCallGraph(options, null);
+        CallGraph cg = builder.makeCallGraph(options, null);
+    //CHACallGraph cg = new CHACallGraph(cha);
+    //cg.init(entrypoints);
     for (CGNode n : cg) {
 	if(n.getMethod().getDeclaringClass().getClassLoader().getReference().equals(ClassLoaderReference.Application)) {
+	    java.util.Iterator<CGNode> callees = cg.getSuccNodes(n);
+	    Collection<CGNode> appCallees = new ArrayList<CGNode>();
+	    while (callees.hasNext()) {
+		CGNode callee = callees.next();
+		if(callee.getMethod().getDeclaringClass().getClassLoader().getReference().equals(ClassLoaderReference.Application))
+		    appCallees.add(callee);
+	    }
+	    if(appCallees.isEmpty()) continue;
 	    out.write("CALLER: ".getBytes());
 	    serializeCGNode(n, out);
-	    java.util.Iterator<CGNode> callees = cg.getSuccNodes(n);
-	    while(callees.hasNext()) {
-		CGNode callee = callees.next();
+	    for(CGNode callee : appCallees){
 		if(callee.getMethod().getDeclaringClass().getClassLoader().getReference().equals(ClassLoaderReference.Application)) {
 		    out.write("\tCALLEE: ".getBytes());
 		    serializeCGNode(callee, out);
@@ -129,9 +144,8 @@ public class AppOnlyCallGraph {
 
   private static Iterable<Entrypoint> makePublicEntrypoints(AnalysisScope scope, IClassHierarchy cha, String entryClass) {
     Collection<Entrypoint> result = new ArrayList<Entrypoint>();
-    IClass klass = cha.lookupClass(TypeReference.findOrCreate(ClassLoaderReference.Application,
-        StringStuff.deployment2CanonicalTypeString(entryClass)));
-    System.err.println("got klass for entrypoints: " + klass);
+    IClass klass = cha.lookupClass(TypeReference.findOrCreate(ClassLoaderReference.Application, entryClass));
+    if (klass == null) return result;
     for (IMethod m : klass.getDeclaredMethods()) {
       if (m.isPublic()) {
         result.add(new DefaultEntrypoint(m, cha));
