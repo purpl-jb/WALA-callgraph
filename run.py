@@ -17,7 +17,7 @@ output_path = sys.argv[3]
 with open("scopefile.tmp", "w") as scopefile:
     scopefile.write("Primordial,Java,stdlib,none\n\Primordial,Java,jarFile,primordial.jar.model\nApplication,java,jarFile,%s" % jarfile)
 
-gradle_cmd = 'gradle run --args="-entryClass %s -scopeFile scopefile.tmp -out %s"' % (entry_class, output_path)
+gradle_cmd = './gradlew run --args="-entryClass %s -scopeFile scopefile.tmp -out %s"' % (entry_class, output_path)
 
 subprocess.call(gradle_cmd, shell=True)
 
