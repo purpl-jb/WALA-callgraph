@@ -32,6 +32,7 @@ import com.ibm.wala.ipa.callgraph.CallGraphStats;
 import com.ibm.wala.ipa.callgraph.CGNode;
 import com.ibm.wala.ipa.callgraph.Entrypoint;
 import com.ibm.wala.ipa.callgraph.cha.CHACallGraph;
+import com.ibm.wala.ipa.callgraph.impl.AllApplicationEntrypoints;
 import com.ibm.wala.ipa.callgraph.impl.DefaultEntrypoint;
 import com.ibm.wala.ipa.callgraph.impl.Util;
 import com.ibm.wala.ipa.cha.ClassHierarchyException;
@@ -95,25 +96,25 @@ public class AppOnlyCallGraph {
     System.out.println(cha.getNumberOfClasses() + " classes");
     System.out.println(Warnings.asString());
     Warnings.clear();
-    AnalysisOptions options = new AnalysisOptions();
-    String classString = StringStuff.deployment2CanonicalTypeString(entryClass != null ? entryClass : mainClass);
-    Iterable<Entrypoint> entrypoints =
-	entryClass != null
-	? makePublicEntrypoints(scope, cha, classString)
-	: Util.makeMainEntrypoints(scope, cha, classString);
-    options.setEntrypoints(entrypoints);
+    // AnalysisOptions options = new AnalysisOptions();
+    // String classString = StringStuff.deployment2CanonicalTypeString(entryClass != null ? entryClass : mainClass);
+    // Iterable<Entrypoint> entrypoints =
+	// entryClass != null
+	// ? makePublicEntrypoints(scope, cha, classString)
+	// : Util.makeMainEntrypoints(scope, cha, classString);
+    // options.setEntrypoints(entrypoints);
     // you can dial down reflection handling if you like
-    options.setReflectionOptions(AnalysisOptions.ReflectionOptions.NONE);
+    // options.setReflectionOptions(AnalysisOptions.ReflectionOptions.NONE);
     AnalysisCache cache = new AnalysisCacheImpl();
     // other builders can be constructed with different Util methods
     // TODO(benno): Manu says to use CHACallGraph if we run into scaling issues with 0-1-container-CFA? doesn't need entrypoints and scales much better
-    CallGraphBuilder builder = Util.makeNCFABuilder(0, options, cache, cha, scope);
+    // CallGraphBuilder builder = Util.makeNCFABuilder(0, options, cache, cha, scope);
     //    CallGraphBuilder builder = Util.makeVanillaNCFABuilder(2, options, cache, cha, scope);
     //    CallGraphBuilder builder = Util.makeZeroOneContainerCFABuilder(options, cache, cha, scope);
     System.out.println("building call graph...");
-        CallGraph cg = builder.makeCallGraph(options, null);
-    //CHACallGraph cg = new CHACallGraph(cha);
-    //cg.init(entrypoints);
+        // CallGraph cg = builder.makeCallGraph(options, null);
+    CHACallGraph cg = new CHACallGraph(cha);
+    cg.init(new AllApplicationEntrypoints(scope, cha));
     for (CGNode n : cg) {
 	if(n.getMethod().getDeclaringClass().getClassLoader().getReference().equals(ClassLoaderReference.Application)) {
 	    java.util.Iterator<CGNode> callees = cg.getSuccNodes(n);
