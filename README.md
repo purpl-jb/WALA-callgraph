@@ -8,9 +8,9 @@ example project, and as such shares the requirements, installation instructions,
 
 In order to generate an _application-only_ callgraph, install and then run
 
-    ./run.py Lcom/example/MainClass <jar> <output>
+    ./run.py <output> <jar>
 	
-This will analyze the java program `<jar>` from the entrypoint in `com.example.MainClass`, build a callgraph,
+This will analyze the java program `<jar>`, build a callgraph,
 and write to `<output>` a text file containing those callgraph edges originating in application code.
 
 This serialized callgraph can then be used by other analysis tools as needed.
@@ -19,7 +19,7 @@ This serialized callgraph can then be used by other analysis tools as needed.
 
 Requirements are:
 
-  * Java 8
+  * Java 8 or 11
 
 Installation instructions will vary by operating system.
 
@@ -30,6 +30,15 @@ Clone the repository, and then run:
     ./gradlew compileJava
     
 This will pull in the WALA jars and build the sample code.
+
+### Creating a .jar file
+
+For example, from `test_cases`, run:
+
+```
+$ javac SimpleFuns.java
+$ jar cfe SimpleFuns.jar SimpleFuns SimpleFuns.class
+```
 
 License
 -------
